@@ -4,17 +4,12 @@ package com.example.cameraaccess.modulos
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
-import androidx.fragment.app.Fragment
-import androidx.fragment.app.FragmentActivity
-import com.google.gson.Gson
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.WriterException
 import com.google.zxing.integration.android.IntentIntegrator
 import com.journeyapps.barcodescanner.BarcodeEncoder
 
 class StartCamScan {
-
-    private val REQUEST_CODE_QRCODE = 49374
 
 
     fun initScan(activity: Activity){
