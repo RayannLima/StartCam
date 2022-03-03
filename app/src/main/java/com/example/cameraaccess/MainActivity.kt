@@ -12,6 +12,7 @@ import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.FileProvider
 import com.example.cameraaccess.databinding.ActivityMainBinding
+import com.example.cameraaccess.modulos.StartCamScan
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -49,14 +50,18 @@ class MainActivity : AppCompatActivity() {
 
         }
 
+        binding.buttonScanCode.setOnClickListener {
+            StartCamScan().initScan(this)
+        }
+
         setContentView(binding.root)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        var file : File = File(currentPhotoPath)
         if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
             try {
+                var file : File = File(currentPhotoPath)
                 val imageBitmap = Orientation().loadImage(file.absolutePath)
                 binding.imageView.setImageBitmap(imageBitmap)
 
@@ -65,6 +70,8 @@ class MainActivity : AppCompatActivity() {
                 Log.d("Cam", "Nao foi possivel grava a imagem no Device ")
             }
         }
+
+        binding.textViewScanner.text = StartCamScan().listenerQrCode(requestCode, resultCode, data)
     }
 
 
