@@ -19,6 +19,7 @@ class StartCamScan {
         IntentIntegrator(activity).apply {
             setBeepEnabled(false)
             initiateScan()
+
         }
     }
 

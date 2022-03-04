@@ -2,34 +2,39 @@ package com.example.cameraaccess
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.net.Uri
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.FileProvider
 import com.example.cameraaccess.databinding.ActivityMainBinding
 import com.example.cameraaccess.modulos.StartCamScan
+import com.google.android.gms.vision.Frame
+import com.google.android.gms.vision.barcode.Barcode
+import com.google.android.gms.vision.barcode.BarcodeDetector
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode.*
+import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.client.android.Intents
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanIntentResult
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
-import com.journeyapps.barcodescanner.ScanContract
-
-import com.journeyapps.barcodescanner.ScanOptions
-
-import com.google.zxing.client.android.Intents
-import com.journeyapps.barcodescanner.ScanIntentResult
 
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     val REQUEST_IMAGE_CAPTURE = 1
     lateinit var currentPhotoPath: String
-    private lateinit var uriPath : Uri
+    private lateinit var uriPath: Uri
 
     private val barcodeLauncher = registerForActivityResult(
         ScanContract()
@@ -98,17 +103,71 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
             try {
-                var file : File = File(currentPhotoPath)
+                var file: File = File(currentPhotoPath)
                 val imageBitmap = Orientation().loadImage(file.absolutePath)
                 binding.imageView.setImageBitmap(imageBitmap)
+                readCodebar(imageBitmap!!)
+                //  identifyBarCode(imageBitmap!!)
 
-            }catch (error : IOException){
-                Toast.makeText(this, "Nao foi possivel gravar a imagem neste device" , Toast.LENGTH_LONG).show()
+            } catch (error: IOException) {
+                Toast.makeText(
+                    this,
+                    "Nao foi possivel gravar a imagem neste device",
+                    Toast.LENGTH_LONG
+                ).show()
                 Log.d("Cam", "Nao foi possivel grava a imagem no Device ")
             }
         }
 
         binding.textViewScanner.text = StartCamScan().listenerQrCode(requestCode, resultCode, data)
+    }
+
+    private fun identifyBarCode(imageBitmap: Bitmap) {
+        val detector = BarcodeDetector.Builder(this).setBarcodeFormats(Barcode.CODE_39).build()
+        if (!detector.isOperational) {
+            binding.textViewScanner.text = "Não foi possivel escaner codigo"
+        } else {
+            val frame = Frame.Builder().setBitmap(imageBitmap).build()
+            val codeBar = detector.detect(frame)
+
+            val codeText = codeBar.valueAt(0)
+            binding.textViewScanner.text = codeText.rawValue
+        }
+
+    }
+
+    fun readCodebar(imageBitmap: Bitmap) {
+        val optionsScan = BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.CODE_39).build()
+        val image = InputImage.fromBitmap(imageBitmap, 0)
+        val scanner = BarcodeScanning.getClient(optionsScan)
+        val result = scanner.process(image)
+            .addOnSuccessListener { barCodes ->
+                for (barcode in barCodes) {
+                    val bounds = barcode.boundingBox
+                    val corners = barcode.cornerPoints
+
+                    val rawValue = barcode.rawValue
+
+                    val valueType = barcode.valueType
+                    binding.textViewScanner.text = rawValue
+                    // See API reference for complete list of supported types
+                    when (valueType) {
+                        Barcode.WIFI -> {
+                            val ssid = barcode.wifi!!.ssid
+                            val password = barcode.wifi!!.password
+                            val type = barcode.wifi!!.encryptionType
+                        }
+                        Barcode.URL -> {
+                            val title = barcode.url!!.title
+                            val url = barcode.url!!.url
+                        }
+                    }
+                }
+            }
+            .addOnFailureListener {
+                Toast.makeText(this, "Nao foi possivel analisar codebar", Toast.LENGTH_LONG).show()
+            }
+
     }
 
 
