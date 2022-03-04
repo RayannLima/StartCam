@@ -17,12 +17,49 @@ import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
+import com.journeyapps.barcodescanner.ScanContract
+
+import com.journeyapps.barcodescanner.ScanOptions
+
+import com.google.zxing.client.android.Intents
+import com.journeyapps.barcodescanner.ScanIntentResult
+
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     val REQUEST_IMAGE_CAPTURE = 1
     lateinit var currentPhotoPath: String
     private lateinit var uriPath : Uri
+
+    private val barcodeLauncher = registerForActivityResult(
+        ScanContract()
+    ) { result: ScanIntentResult ->
+        if (result.contents == null) {
+            val originalIntent = result.originalIntent
+            if (originalIntent == null) {
+                Log.d("MainActivity", "Cancelled scan")
+                Toast.makeText(this@MainActivity, "Cancelled", Toast.LENGTH_LONG).show()
+            } else if (originalIntent.hasExtra(Intents.Scan.MISSING_CAMERA_PERMISSION)) {
+                Log.d(
+                    "MainActivity",
+                    "Cancelled scan due to missing camera permission"
+                )
+                Toast.makeText(
+                    this@MainActivity,
+                    "Cancelled due to missing camera permission",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        } else {
+            binding.textViewScanner.text = result.contents
+            Log.d("MainActivity", "Scanned")
+            Toast.makeText(
+                this@MainActivity,
+                "Scanned: " + result.contents,
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,7 +88,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.buttonScanCode.setOnClickListener {
-            StartCamScan().initScan(this)
+            StartCamScan().scanBarCode(barcodeLauncher)
         }
 
         setContentView(binding.root)
