@@ -10,7 +10,13 @@ import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.example.cameraaccess.databinding.ActivityMainBinding
 import com.example.moduleprinter.utils.PrinterUtils
@@ -40,7 +46,8 @@ class MainActivity : AppCompatActivity(), ZXingScannerView.ResultHandler {
     lateinit var currentPhotoPath: String
     private lateinit var uriPath: Uri
     private lateinit var printUtils: PrinterUtils
-    private lateinit var scanner : Reader
+    private var imageCapture: ImageCapture? = null
+    private lateinit var outputDirectory: File
 
     private val barcodeLauncher = registerForActivityResult(
         ScanContract()
@@ -77,6 +84,7 @@ class MainActivity : AppCompatActivity(), ZXingScannerView.ResultHandler {
         binding = ActivityMainBinding.inflate(layoutInflater)
 
 
+        outputDirectory = getOutputDirectory()
         printUtils = PrinterUtils(this)
         binding.buttonTakePicture.setOnClickListener {
             if (ActivityCompat.checkSelfPermission(
@@ -94,9 +102,9 @@ class MainActivity : AppCompatActivity(), ZXingScannerView.ResultHandler {
                 )
                 return@setOnClickListener
             }
-           takePictureIntent()
-
-           // readCodeBarKit()
+            // takePictureIntent()
+            startCameraX()
+            // readCodeBarKit()
 
         }
 
@@ -107,14 +115,85 @@ class MainActivity : AppCompatActivity(), ZXingScannerView.ResultHandler {
         setContentView(binding.root)
     }
 
+    private fun getOutputDirectory(): File {
+        val mediaDir = externalMediaDirs.firstOrNull()?.let { mFile ->
+            File(mFile, resources.getString(R.string.app_name)).apply {
+                mkdir()
+            }
+        }
+        return if (mediaDir != null && mediaDir.exists())
+            mediaDir else filesDir
+    }
+
+    private fun startCameraX() {
+        try {
+            val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+
+
+
+
+            cameraProviderFuture.addListener({
+                val preview = Preview.Builder()
+                    .build()
+                    .also { mPreview ->
+                        mPreview.setSurfaceProvider(binding.cameraX.surfaceProvider)
+                    }
+                imageCapture = ImageCapture.Builder()
+                    .build()
+                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture)
+                } catch (e: Exception) {
+                    Log.d("Camerax", "Start camera fail : $e")
+                }
+            }, ContextCompat.getMainExecutor(this))
+        } catch (e: Exception) {
+            Log.d("Camerax", "Error camera $e")
+        }
+    }
+
+    private fun takePhoto() {
+        val imageCapture = imageCapture ?: return
+        val photoFile = File(
+            outputDirectory,
+            SimpleDateFormat(
+                Constants.FILE_NAME_FORMAT,
+                Locale.getDefault()
+            ).format(System.currentTimeMillis()) + ".jpg")
+
+        val outputOption = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+        imageCapture.takePicture(
+            outputOption, ContextCompat.getMainExecutor(this), object  : ImageCapture.OnImageSavedCallback{
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    val savedUri = Uri.fromFile(photoFile)
+                    val msg = "Photo saved"
+
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Faliled save photo: ",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    Log.d("Camerax", "erro save photo ${exception.message}")
+                }
+
+            }
+        )
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
             try {
                 var file: File = File(currentPhotoPath)
                 val imageBitmap = Orientation().loadImage(file.absolutePath)
-              /*  val bitMono = printUtils.toInvertedMonochromatic(imageBitmap, 0.50, true)
-                binding.imageView.setImageBitmap(bitMono)*/
+                /*  val bitMono = printUtils.toInvertedMonochromatic(imageBitmap, 0.50, true)
+                  binding.imageView.setImageBitmap(bitMono)*/
                 readCodebar(imageBitmap!!)
                 //  identifyBarCode(imageBitmap!!)
 
@@ -144,7 +223,7 @@ class MainActivity : AppCompatActivity(), ZXingScannerView.ResultHandler {
 
     }
 
-    fun readCodeBarKit(){
+    fun readCodeBarKit() {
         val option = GmsBarcodeScannerOptions.Builder()
             .setBarcodeFormats(Barcode.ALL_FORMATS)
             .build()
@@ -161,7 +240,12 @@ class MainActivity : AppCompatActivity(), ZXingScannerView.ResultHandler {
     }
 
     fun readCodebar(imageBitmap: Bitmap) {
-        val optionsScan = BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.CODE_39,Barcode.CODE_93, Barcode.QR_CODE, Barcode.ALL_FORMATS).build()
+        val optionsScan = BarcodeScannerOptions.Builder().setBarcodeFormats(
+            Barcode.CODE_39,
+            Barcode.CODE_93,
+            Barcode.QR_CODE,
+            Barcode.ALL_FORMATS
+        ).build()
 
         val image = InputImage.fromBitmap(imageBitmap, 0)
         val scanner = BarcodeScanning.getClient(optionsScan)

@@ -6,11 +6,21 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <androidx.camera.view.PreviewView
+        android:id="@+id/cameraX"
+        android:layout_width="200dp"
+        android:layout_height="200dp"
+        app:layout_constraintBottom_toBottomOf="@+id/textViewScanner"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <ImageView
         android:id="@+id/imageView"
         android:layout_width="175dp"
         android:layout_height="200dp"
         android:layout_marginTop="150dp"
+        android:visibility="invisible"
         android:src="@drawable/ic_baseline_add_a_photo_24"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
