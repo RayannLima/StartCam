@@ -13,28 +13,34 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.FileProvider
 import com.example.cameraaccess.databinding.ActivityMainBinding
-import com.example.cameraaccess.modulos.StartCamScan
+import com.example.moduleprinter.utils.PrinterUtils
 import com.google.android.gms.vision.Frame
 import com.google.android.gms.vision.barcode.Barcode
 import com.google.android.gms.vision.barcode.BarcodeDetector
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode.*
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.Reader
+import com.google.zxing.Result
 import com.google.zxing.client.android.Intents
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanIntentResult
+import me.dm7.barcodescanner.zxing.ZXingScannerView
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), ZXingScannerView.ResultHandler {
     private lateinit var binding: ActivityMainBinding
     val REQUEST_IMAGE_CAPTURE = 1
     lateinit var currentPhotoPath: String
     private lateinit var uriPath: Uri
+    private lateinit var printUtils: PrinterUtils
+    private lateinit var scanner : Reader
 
     private val barcodeLauncher = registerForActivityResult(
         ScanContract()
@@ -71,6 +77,7 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
 
 
+        printUtils = PrinterUtils(this)
         binding.buttonTakePicture.setOnClickListener {
             if (ActivityCompat.checkSelfPermission(
                     this,
@@ -87,13 +94,14 @@ class MainActivity : AppCompatActivity() {
                 )
                 return@setOnClickListener
             }
-            takePictureIntent()
+           takePictureIntent()
 
+           // readCodeBarKit()
 
         }
 
         binding.buttonScanCode.setOnClickListener {
-            StartCamScan().scanBarCode(barcodeLauncher)
+
         }
 
         setContentView(binding.root)
@@ -105,7 +113,8 @@ class MainActivity : AppCompatActivity() {
             try {
                 var file: File = File(currentPhotoPath)
                 val imageBitmap = Orientation().loadImage(file.absolutePath)
-                binding.imageView.setImageBitmap(imageBitmap)
+              /*  val bitMono = printUtils.toInvertedMonochromatic(imageBitmap, 0.50, true)
+                binding.imageView.setImageBitmap(bitMono)*/
                 readCodebar(imageBitmap!!)
                 //  identifyBarCode(imageBitmap!!)
 
@@ -119,7 +128,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.textViewScanner.text = StartCamScan().listenerQrCode(requestCode, resultCode, data)
     }
 
     private fun identifyBarCode(imageBitmap: Bitmap) {
@@ -136,8 +144,25 @@ class MainActivity : AppCompatActivity() {
 
     }
 
+    fun readCodeBarKit(){
+        val option = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.ALL_FORMATS)
+            .build()
+        val scanner = GmsBarcodeScanning.getClient(this, option)
+
+        scanner.startScan()
+            .addOnSuccessListener {
+                binding.textViewScanner.text = it.rawValue
+            }
+            .addOnFailureListener {
+
+            }
+
+    }
+
     fun readCodebar(imageBitmap: Bitmap) {
-        val optionsScan = BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.CODE_39).build()
+        val optionsScan = BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.CODE_39,Barcode.CODE_93, Barcode.QR_CODE, Barcode.ALL_FORMATS).build()
+
         val image = InputImage.fromBitmap(imageBitmap, 0)
         val scanner = BarcodeScanning.getClient(optionsScan)
         val result = scanner.process(image)
@@ -149,6 +174,11 @@ class MainActivity : AppCompatActivity() {
                     val rawValue = barcode.rawValue
 
                     val valueType = barcode.valueType
+                    Log.d(
+                        "MainsActivity",
+                        "Foi possivel analisar codebar ${barcode.displayValue}  ${barcode.rawValue}"
+                    )
+                    binding.imageView.setImageBitmap(imageBitmap)
                     binding.textViewScanner.text = rawValue
                     // See API reference for complete list of supported types
                     when (valueType) {
@@ -165,9 +195,15 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .addOnFailureListener {
+                Log.d("MainsActivity", "Nao foi possivel analisar codebar")
                 Toast.makeText(this, "Nao foi possivel analisar codebar", Toast.LENGTH_LONG).show()
             }
 
+
+    }
+
+    override fun onPause() {
+        super.onPause()
     }
 
 
@@ -209,5 +245,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun handleResult(rawResult: Result?) {
+        binding.textViewScanner.text = rawResult?.text
     }
 }
