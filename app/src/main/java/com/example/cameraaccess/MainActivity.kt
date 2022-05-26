@@ -2,32 +2,90 @@ package com.example.cameraaccess
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.net.Uri
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.example.cameraaccess.databinding.ActivityMainBinding
+import com.example.moduleprinter.utils.PrinterUtils
+import com.google.android.gms.vision.Frame
+import com.google.android.gms.vision.barcode.Barcode
+import com.google.android.gms.vision.barcode.BarcodeDetector
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.Reader
+import com.google.zxing.Result
+import com.google.zxing.client.android.Intents
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanIntentResult
+import me.dm7.barcodescanner.zxing.ZXingScannerView
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 
-class MainActivity : AppCompatActivity() {
+
+class MainActivity : AppCompatActivity(), ZXingScannerView.ResultHandler {
     private lateinit var binding: ActivityMainBinding
     val REQUEST_IMAGE_CAPTURE = 1
     lateinit var currentPhotoPath: String
-    private lateinit var uriPath : Uri
+    private lateinit var uriPath: Uri
+    private lateinit var printUtils: PrinterUtils
+    private var imageCapture: ImageCapture? = null
+    private lateinit var outputDirectory: File
+
+    private val barcodeLauncher = registerForActivityResult(
+        ScanContract()
+    ) { result: ScanIntentResult ->
+        if (result.contents == null) {
+            val originalIntent = result.originalIntent
+            if (originalIntent == null) {
+                Log.d("MainActivity", "Cancelled scan")
+                Toast.makeText(this@MainActivity, "Cancelled", Toast.LENGTH_LONG).show()
+            } else if (originalIntent.hasExtra(Intents.Scan.MISSING_CAMERA_PERMISSION)) {
+                Log.d(
+                    "MainActivity",
+                    "Cancelled scan due to missing camera permission"
+                )
+                Toast.makeText(
+                    this@MainActivity,
+                    "Cancelled due to missing camera permission",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        } else {
+            binding.textViewScanner.text = result.contents
+            Log.d("MainActivity", "Scanned")
+            Toast.makeText(
+                this@MainActivity,
+                "Scanned: " + result.contents,
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
 
 
+        outputDirectory = getOutputDirectory()
+        printUtils = PrinterUtils(this)
         binding.buttonTakePicture.setOnClickListener {
             if (ActivityCompat.checkSelfPermission(
                     this,
@@ -44,27 +102,192 @@ class MainActivity : AppCompatActivity() {
                 )
                 return@setOnClickListener
             }
-            takePictureIntent()
+            // takePictureIntent()
+            startCameraX()
+            // readCodeBarKit()
 
+        }
+
+        binding.buttonScanCode.setOnClickListener {
 
         }
 
         setContentView(binding.root)
     }
 
+    private fun getOutputDirectory(): File {
+        val mediaDir = externalMediaDirs.firstOrNull()?.let { mFile ->
+            File(mFile, resources.getString(R.string.app_name)).apply {
+                mkdir()
+            }
+        }
+        return if (mediaDir != null && mediaDir.exists())
+            mediaDir else filesDir
+    }
+
+    private fun startCameraX() {
+        try {
+            val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+
+
+
+
+            cameraProviderFuture.addListener({
+                val preview = Preview.Builder()
+                    .build()
+                    .also { mPreview ->
+                        mPreview.setSurfaceProvider(binding.cameraX.surfaceProvider)
+                    }
+                imageCapture = ImageCapture.Builder()
+                    .build()
+                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture)
+                } catch (e: Exception) {
+                    Log.d("Camerax", "Start camera fail : $e")
+                }
+            }, ContextCompat.getMainExecutor(this))
+        } catch (e: Exception) {
+            Log.d("Camerax", "Error camera $e")
+        }
+    }
+
+    private fun takePhoto() {
+        val imageCapture = imageCapture ?: return
+        val photoFile = File(
+            outputDirectory,
+            SimpleDateFormat(
+                Constants.FILE_NAME_FORMAT,
+                Locale.getDefault()
+            ).format(System.currentTimeMillis()) + ".jpg")
+
+        val outputOption = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+        imageCapture.takePicture(
+            outputOption, ContextCompat.getMainExecutor(this), object  : ImageCapture.OnImageSavedCallback{
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    val savedUri = Uri.fromFile(photoFile)
+                    val msg = "Photo saved"
+
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Faliled save photo: ",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    Log.d("Camerax", "erro save photo ${exception.message}")
+                }
+
+            }
+        )
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        var file : File = File(currentPhotoPath)
         if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
             try {
+                var file: File = File(currentPhotoPath)
                 val imageBitmap = Orientation().loadImage(file.absolutePath)
-                binding.imageView.setImageBitmap(imageBitmap)
+                /*  val bitMono = printUtils.toInvertedMonochromatic(imageBitmap, 0.50, true)
+                  binding.imageView.setImageBitmap(bitMono)*/
+                readCodebar(imageBitmap!!)
+                //  identifyBarCode(imageBitmap!!)
 
-            }catch (error : IOException){
-                Toast.makeText(this, "Nao foi possivel gravar a imagem neste device" , Toast.LENGTH_LONG).show()
+            } catch (error: IOException) {
+                Toast.makeText(
+                    this,
+                    "Nao foi possivel gravar a imagem neste device",
+                    Toast.LENGTH_LONG
+                ).show()
                 Log.d("Cam", "Nao foi possivel grava a imagem no Device ")
             }
         }
+
+    }
+
+    private fun identifyBarCode(imageBitmap: Bitmap) {
+        val detector = BarcodeDetector.Builder(this).setBarcodeFormats(Barcode.CODE_39).build()
+        if (!detector.isOperational) {
+            binding.textViewScanner.text = "Não foi possivel escaner codigo"
+        } else {
+            val frame = Frame.Builder().setBitmap(imageBitmap).build()
+            val codeBar = detector.detect(frame)
+
+            val codeText = codeBar.valueAt(0)
+            binding.textViewScanner.text = codeText.rawValue
+        }
+
+    }
+
+    fun readCodeBarKit() {
+        val option = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.ALL_FORMATS)
+            .build()
+        val scanner = GmsBarcodeScanning.getClient(this, option)
+
+        scanner.startScan()
+            .addOnSuccessListener {
+                binding.textViewScanner.text = it.rawValue
+            }
+            .addOnFailureListener {
+
+            }
+
+    }
+
+    fun readCodebar(imageBitmap: Bitmap) {
+        val optionsScan = BarcodeScannerOptions.Builder().setBarcodeFormats(
+            Barcode.CODE_39,
+            Barcode.CODE_93,
+            Barcode.QR_CODE,
+            Barcode.ALL_FORMATS
+        ).build()
+
+        val image = InputImage.fromBitmap(imageBitmap, 0)
+        val scanner = BarcodeScanning.getClient(optionsScan)
+        val result = scanner.process(image)
+            .addOnSuccessListener { barCodes ->
+                for (barcode in barCodes) {
+                    val bounds = barcode.boundingBox
+                    val corners = barcode.cornerPoints
+
+                    val rawValue = barcode.rawValue
+
+                    val valueType = barcode.valueType
+                    Log.d(
+                        "MainsActivity",
+                        "Foi possivel analisar codebar ${barcode.displayValue}  ${barcode.rawValue}"
+                    )
+                    binding.imageView.setImageBitmap(imageBitmap)
+                    binding.textViewScanner.text = rawValue
+                    // See API reference for complete list of supported types
+                    when (valueType) {
+                        Barcode.WIFI -> {
+                            val ssid = barcode.wifi!!.ssid
+                            val password = barcode.wifi!!.password
+                            val type = barcode.wifi!!.encryptionType
+                        }
+                        Barcode.URL -> {
+                            val title = barcode.url!!.title
+                            val url = barcode.url!!.url
+                        }
+                    }
+                }
+            }
+            .addOnFailureListener {
+                Log.d("MainsActivity", "Nao foi possivel analisar codebar")
+                Toast.makeText(this, "Nao foi possivel analisar codebar", Toast.LENGTH_LONG).show()
+            }
+
+
+    }
+
+    override fun onPause() {
+        super.onPause()
     }
 
 
@@ -106,5 +329,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun handleResult(rawResult: Result?) {
+        binding.textViewScanner.text = rawResult?.text
     }
 }
